@@ -1,0 +1,23 @@
+{
+  "title": "AI 工具学习中心",
+  "tools": [
+    {
+      "id": "claude",
+      "name": "Claude Code",
+      "subtitle": "Anthropic CLI 完整教程",
+      "file": "data/claude-code.md",
+      "color": "#8b5cf6",
+      "colorLight": "#ede9fe",
+      "icon": "🤖"
+    },
+    {
+      "id": "codex",
+      "name": "OpenAI Codex",
+      "subtitle": "初学者完整全套教程",
+      "file": "data/codex.md",
+      "color": "#10b981",
+      "colorLight": "#d1fae5",
+      "icon": "⚡"
+    }
+  ]
+}
