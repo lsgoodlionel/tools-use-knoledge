@@ -24,6 +24,7 @@ class AIToolsGuide {
 
     this.setupTheme();
     this.renderToolTabs();
+    this.setupNavClick();
     this.setupMobileMenu();
     this.setupScrollProgress();
 
@@ -58,6 +59,14 @@ class AIToolsGuide {
     this.applyAccent(tool.color, tool.colorLight);
     this.updateTabStates();
 
+    // Update breadcrumb immediately (before any async operations)
+    document.getElementById('breadcrumb').innerHTML =
+      `<strong>${tool.icon} ${tool.name}</strong> — ${tool.subtitle}`;
+
+    // Reset search
+    document.getElementById('search-input').value = '';
+    document.getElementById('search-count').textContent = '';
+
     // Show loading
     document.getElementById('main-content').innerHTML =
       `<div class="state-msg"><div class="big">⏳</div><p>加载 ${tool.name} 教程…</p></div>`;
@@ -71,16 +80,11 @@ class AIToolsGuide {
       };
     }
 
+    // Guard against race: user may have switched tool during fetch
+    if (this.activeTool !== toolId) return;
+
     this.renderNav(this.cache[toolId].sections);
     this.renderContent(this.cache[toolId].markdown, tool);
-
-    // Reset search
-    document.getElementById('search-input').value = '';
-    document.getElementById('search-count').textContent = '';
-
-    // Update breadcrumb
-    document.getElementById('breadcrumb').innerHTML =
-      `<strong>${tool.icon} ${tool.name}</strong> — ${tool.subtitle}`;
   }
 
   /* ── Parse headings ──────────────────────────────────── */
@@ -148,20 +152,23 @@ class AIToolsGuide {
       </li>
     `).join('');
 
-    list.addEventListener('click', e => {
+    // Single delegated listener on nav-wrap (set once in init, not repeated)
+    this.setupScrollSpy();
+  }
+
+  /* ── Nav click handler (attached once) ──────────────── */
+  setupNavClick() {
+    document.getElementById('nav-list').addEventListener('click', e => {
       const btn = e.target.closest('[data-id]');
       if (!btn) return;
       const id = btn.dataset.id;
       const el = document.getElementById(id);
       if (el) {
         el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        // Close mobile sidebar
         document.getElementById('sidebar').classList.remove('open');
         document.getElementById('overlay').classList.remove('show');
       }
     });
-
-    this.setupScrollSpy();
   }
 
   /* ── Render content ──────────────────────────────────── */
