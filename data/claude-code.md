@@ -1,12 +1,13 @@
 # Claude Code 初学者完整全套教程
 
-> 涵盖从安装到 Agent Teams 的所有核心功能，共 20 个模块。  
+> 涵盖从入门认知到 Agent Teams 的所有核心功能，共 23 个模块。  
 > 最后更新：2026年4月 | 适用版本：Claude Code v2.1+
 
 ---
 
 ## 目录
 
+0. [什么是 Claude Code](#0-什么是-claude-code)
 1. [安装与登录](#1-安装与登录)
 2. [第一次使用](#2-第一次使用)
 3. [斜杠命令完整速查](#3-斜杠命令完整速查)
@@ -27,6 +28,64 @@
 18. [成本控制与 Token 优化](#18-成本控制与-token-优化)
 19. [实战工作模式](#19-实战工作模式)
 20. [故障排查完全手册](#20-故障排查完全手册)
+21. [Extended Thinking 扩展思维详解](#21-extended-thinking-扩展思维详解)
+22. [记忆系统（Memory）深度指南](#22-记忆系统memory深度指南)
+23. [环境变量完整参考](#23-环境变量完整参考)
+
+---
+
+## 0. 什么是 Claude Code
+
+### 一句话定位
+
+Claude Code 是 Anthropic 推出的 **AI 编程代理（Agent）**，而非代码补全工具。它能自主规划多步任务、操作文件系统、运行命令、调用外部服务，并在完成后向你汇报结果——就像一个随叫随到的资深工程师。
+
+### 与其他工具的对比
+
+| 维度 | GitHub Copilot | Cursor | OpenAI Codex | Claude Code |
+|------|---------------|--------|--------------|-------------|
+| 交互方式 | 行内补全 | 聊天 + 补全 | 聊天 + 后台任务 | 终端 Agent |
+| 自主执行 | ❌ | 部分 | ✅（云端沙箱） | ✅（本地直接） |
+| 文件操作 | ❌ | ✅ | ✅ | ✅ |
+| 运行命令 | ❌ | ❌ | ✅（沙箱） | ✅（本地） |
+| Git 操作 | ❌ | 部分 | ✅ | ✅ |
+| MCP 集成 | ❌ | ❌ | ❌ | ✅ |
+| Hooks/自动化 | ❌ | ❌ | 部分 | ✅ |
+| 工作环境 | 编辑器插件 | 独立 IDE | 独立 App/CLI | 终端 CLI |
+
+### 核心能力
+
+- **自主规划**：将复杂目标拆解为子任务，按序执行，遇到问题自动调整
+- **多文件操作**：读写、重构、新建，跨文件理解代码依赖关系
+- **Git 原生集成**：理解分支、提交、PR，能自主完成完整 git 工作流
+- **测试验证**：运行测试套件，分析失败原因，自动修复并重新验证
+- **MCP 扩展**：通过 MCP 协议连接数据库、Slack、GitHub 等外部系统
+- **Hooks 自动化**：在每次提交前后、工具调用前后自动触发脚本
+
+### 底层模型
+
+| 用途 | 推荐模型 |
+|------|---------|
+| 日常开发（80% 场景） | claude-sonnet-4-6 |
+| 复杂架构 / 安全审计 | claude-opus-4-6 |
+| 探索性搜索（子代理） | claude-haiku-4-5 |
+| 大任务规划+执行分离 | opusplan（规划用 Opus，执行用 Sonnet） |
+
+### 适合的场景
+
+✅ 快速实现功能原型  
+✅ 重构老旧代码库  
+✅ 编写并调试测试  
+✅ 自动化 CI/CD 流水线  
+✅ 代码审查与安全分析  
+✅ 生成并同步文档  
+
+### 不适合的场景
+
+⚠️ 需要精确像素级 UI 设计（纯视觉工作）  
+⚠️ 高度依赖实时用户交互的操作（如需要每步确认的业务流程）  
+⚠️ 访问无法通过 MCP 暴露的私有内部系统  
+⚠️ 对延迟极敏感的毫秒级实时系统修改  
 
 ---
 
@@ -888,7 +947,7 @@ claude --agent code-reviewer
 | 通信 | 只能上报给父代理 | 通过邮箱系统互相发消息 |
 | 适合 | 独立任务、无需协调 | 需互相审查、共享发现 |
 | 状态 | 稳定可用 | 实验性（需开启 flag） |
-| 成本 | 较低 | 显著更高 |
+| 成本 | 较低 | 显著更高（约 2.5~3 倍） |
 
 ### 开启 Agent Teams
 
@@ -903,6 +962,16 @@ echo 'export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1' >> ~/.zshrc
 # { "env": { "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1" } }
 ```
 
+### 邮箱系统：Agent 间通信原理
+
+Agent Teams 通过内置的**邮箱（Mailbox）机制**实现点对点通信：
+
+- 每个 Teammate 都有唯一邮箱地址（`@security`、`@performance` 等）
+- Teammate 可向其他 Teammate 发送消息，也可抄送 Lead
+- Lead 充当协调者，分配初始任务并汇总最终结果
+- 消息是异步的，Teammate 可以在接收消息前继续执行自己的任务
+- 共享发现（如「发现了一个注入漏洞」）会进入公共任务列表，所有人可见
+
 ### 监控快捷键
 
 | 快捷键 | 功能 |
@@ -912,23 +981,70 @@ echo 'export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1' >> ~/.zshrc
 | `Enter` | 进入某个 Teammate 的详细会话 |
 | `Esc` | 中断 Teammate 的当前操作 |
 
-### 实际用例
+### 场景一：多角度并行代码审查
 
 ```
-# 多角度并行代码审查
-组建 3 人代理团队审查 src/payments/：
-- 安全专家：认证 / 注入 / 数据保护
-- 性能专家：查询效率 / 缓存策略
-- 测试专家：覆盖率 / 用例有效性
-三个代理可以互相质疑对方的发现。
+目标：全面审查 src/payments/ 模块，识别安全、性能和测试盲点。
 
-# 大型重构（Express → tRPC 迁移）
-组建代理团队：
-- 代理 A：分析现有 API 路由结构
-- 代理 B：设计 tRPC 路由 schema
-- 代理 C：分析前端调用方式
-A 和 B 的分析结果互相校验后再开始实际迁移。
+Lead 分配：
+  → @security：审查认证流程、SQL 注入风险、敏感数据保护
+  → @performance：分析数据库查询效率、缓存策略、N+1 问题
+  → @testing：检查测试覆盖率、边界用例、Mock 有效性
+
+协作流程：
+  1. 三个 Teammate 并行分析各自领域
+  2. @security 发现 JWT 未验证签名 → 广播给全组
+  3. @testing 立即补充「JWT 验证缺失的测试用例」到共享任务
+  4. Lead 汇总三方报告，生成优先级排序的修复清单
 ```
+
+### 场景二：大型重构（Express → tRPC 迁移）
+
+```
+目标：将 REST API 迁移到 tRPC，保持向后兼容。
+
+Lead 分配：
+  → @analyzer：分析现有 120 个 API 路由的结构和依赖
+  → @designer：设计对应的 tRPC router schema
+  → @frontend：分析前端所有调用方式，标记兼容风险
+
+协作流程：
+  1. @analyzer 生成路由清单 → 发送给 @designer 和 @frontend
+  2. @designer 起草 schema → @analyzer 验证语义一致性
+  3. @frontend 标记高风险接口 → @designer 优先设计兼容层
+  4. 三方确认后，Lead 启动实际迁移代码编写
+```
+
+### 场景三：安全 + 性能并行审查（2 Teammate）
+
+```
+适合场景：快速的预上线检查，时间敏感。
+
+Lead：
+  "上线前检查 src/api/ —— 安全专家审查权限控制，性能专家
+   检查慢查询，15 分钟内给我优先级 P0 问题清单。"
+
+@security → 重点：认证中间件、RBAC 权限边界
+@performance → 重点：未加索引的查询、大对象序列化
+
+成本估算：约 40 万 tokens（相当于单 Agent 全面审查的 1.8 倍，
+           但时间缩短 60%，且有交叉验证价值）。
+```
+
+### 常见陷阱
+
+| 问题 | 原因 | 解决方法 |
+|------|------|---------|
+| Teammate 互相等待，进度停滞 | 任务存在循环依赖 | 重新设计分工，确保初始任务可独立启动 |
+| 多个 Teammate 同时写同一文件 | 未声明文件归属 | 在初始 Prompt 中明确「@X 负责文件 A，@Y 负责文件 B」 |
+| Lead 报告内容混乱 | Teammate 发送格式不一致 | 在 CLAUDE.md 中定义统一的报告模板 |
+| 孤立进程占用资源 | 清理顺序错误 | 先 `Esc` 关闭所有 Teammates，再关闭 Lead 会话 |
+
+### 成本预估参考
+
+- **2 Teammate 场景**：约为单 Agent 的 1.8~2 倍
+- **3 Teammate 场景**：约为单 Agent 的 2.5~3 倍
+- **降低成本技巧**：Teammate 使用 Sonnet，Lead 使用 Opus；或将 Teammate 限定在只读分析角色
 
 > **注意：** Agent Teams 需要 Opus 4.6+ 模型，成本显著高于单代理工作流。  
 > 建议从 2-3 个 Teammate 开始。清理时，先关闭所有 Teammates，再关闭 Lead，避免孤立进程。
@@ -1196,14 +1312,65 @@ claude mcp remove github   # 当前任务不需要 GitHub 时
 | `claude-opus-4-6` | 慢 | 高 | 架构决策、复杂重构、安全审计 |
 | `opusplan` | 中 | 中 | 规划用 Opus，执行用 Sonnet，大任务最优 |
 
-### 六大成本控制技巧
+### 按项目规模推荐配置
 
-1. **子代理用 Haiku**：探索性任务委托给 Haiku 子代理，可降低 40-50% 成本。
-2. **频繁 `/clear`**：满载会话每次响应比干净会话贵 10 倍，切换任务立即清空。
-3. **禁用无用 MCP**：每个 MCP 服务器占用固定 token，不用的关掉，节省 8-30% 空间。
-4. **谨慎 Fast Mode**：2.5x 速度但 6x 成本，中途开启还会重新计算之前的上下文。
-5. **@引用代替粘贴**：工具加载文件比手动粘贴效率更高，token 利用率更好。
-6. **监控用量**：`/cost` 查消耗，`/context` 分析分布，主动管理。
+| 项目类型 | 主模型 | 子代理模型 | 月均成本参考 |
+|---------|-------|----------|------------|
+| 个人副业 / 小项目 | Sonnet | Haiku | $20 Pro 套餐内 |
+| 中型团队项目 | opusplan | Sonnet | Max $100 套餐或 API 按量 |
+| 大型企业代码库 | Opus | Sonnet | API 按量，建议 Bedrock/Vertex |
+| CI/CD 流水线 | Haiku（多数任务） | — | API 按量，波动大 |
+
+### 六大成本控制技巧（量化版）
+
+1. **子代理用 Haiku**  
+   探索性任务（搜索文件、读取日志、grep 分析）委托给 Haiku 子代理。  
+   *量化：Haiku 成本约为 Sonnet 的 1/8，批量探索任务可降低总成本 40-50%。*
+
+2. **频繁 `/clear`**  
+   满载上下文（~200K tokens）的会话，每次响应的成本是干净会话的 8-10 倍。  
+   *建议：每完成一个独立任务立即 `/clear`，切换功能模块前必清。*
+
+3. **禁用无用 MCP**  
+   每个已连接的 MCP 服务器在每次请求时都会注入其工具描述（固定 token 消耗）。  
+   *量化：关闭 3 个未使用的 MCP 服务器可节省上下文空间 20-30%。*
+
+4. **谨慎 Fast Mode**  
+   Fast Mode 带来 2.5x 速度提升，但成本上升约 6 倍。  
+   *适合场景：紧急的单步任务。不适合：长任务中途开启（会重算历史上下文，反而更贵）。*
+
+5. **`@引用`代替手动粘贴**  
+   工具调用加载文件时，Claude 只读取需要的片段；手动粘贴则强制全量进入上下文。  
+   *量化：对大文件（>500行）用 `@` 引用，可减少 30-60% 无效 token 消耗。*
+
+6. **主动监控用量**  
+   ```bash
+   /cost          # 查看本次会话的 token 消耗和费用
+   /context       # 查看上下文分布，识别占用大户（如某个大文件）
+   /model haiku   # 切换到低成本模型处理当前任务
+   ```
+
+### 月度预算控制方法
+
+```bash
+# 第一步：建立心理预算（推荐）
+# Pro 套餐 $20：相当于 ~400 次中等复杂任务（Sonnet）
+# Max 套餐 $100：相当于 ~2000 次中等复杂任务
+
+# 第二步：每周检查
+/cost  # 查看本周累计消耗
+
+# 第三步：配置成本告警（API 用量时）
+# 在 Anthropic Console 设置月度用量上限和邮件告警阈值
+```
+
+### Extended Thinking 的成本影响
+
+开启 Extended Thinking（`ultrathink`）会将 token 消耗提升 3-8 倍。  
+**值得用的场景：** 安全审计、复杂架构决策、难以复现的 bug  
+**不值得用的场景：** 常规 bug 修复、文档编写、简单重构
+
+详见 [第 21 章：Extended Thinking 扩展思维详解](#21-extended-thinking-扩展思维详解)
 
 ### 套餐选择建议
 
@@ -1360,6 +1527,192 @@ claude --version            # 对比官方最新版本
 
 # 第 7 步：查官方文档
 # https://code.claude.com/docs — 确认功能和语法是否变更
+```
+
+---
+
+## 21. Extended Thinking 扩展思维详解
+
+Extended Thinking 是 Claude Code 的「深度推理模式」，让模型在给出答案前进行更长时间的内部推导。适合需要多步骤逻辑、权衡取舍或高风险决策的场景。
+
+### 四档关键词对照
+
+| 关键词 | Token 预算 | 适合场景 |
+|--------|-----------|---------|
+| `think` | ~1,000 | 简单设计问题、代码理解 |
+| `think hard` | ~5,000 | 复杂 bug 分析、中等架构决策 |
+| `think harder` | ~10,000 | 大型重构规划、复杂安全审计 |
+| `ultrathink` | ~31,000 | 高风险架构变更、极难复现的 bug |
+
+> Token 预算为**思维过程**消耗的额外 token，最终回答的 token 另计。
+
+### 触发方式
+
+```bash
+# 方式一：在 Prompt 中直接使用关键词
+"ultrathink: 分析这个认证中间件的安全边界，找出潜在漏洞"
+
+"think hard: 我们的数据库连接池在高并发下为什么会出现连接泄漏"
+
+# 方式二：Alt+T 快捷键（在输入框输入时）
+# 按下 Alt+T 可在当前 Prompt 前自动追加 "think hard："
+# 再次按 Alt+T 升级为 "think harder："，第三次为 "ultrathink："
+```
+
+### 在 VS Code 中查看推理过程
+
+1. 安装 Claude Code VS Code 扩展
+2. 触发 Extended Thinking 任务后，侧边栏出现「推理过程」折叠块
+3. 点击展开，可查看完整的内部推导步骤（灰色文本，可读但不可编辑）
+4. 推理过程不计入后续会话的上下文（一次性展示）
+
+### 值得使用的场景
+
+| 场景 | 推荐档位 | 理由 |
+|------|---------|------|
+| 安全漏洞审计 | `think harder` / `ultrathink` | 攻击面分析需要多步骤推导 |
+| 复杂重构影响评估 | `think hard` | 依赖链追踪需要系统性思考 |
+| 难以复现的竞态 bug | `ultrathink` | 需要推演多种时序组合 |
+| 架构技术选型 | `think hard` | 权衡多个方案的利弊 |
+| 日常 bug 修复 | 不需要 | 普通模式已足够，浪费成本 |
+
+### 成本与收益权衡
+
+- `ultrathink` 的 token 消耗约是普通模式的 **4-8 倍**
+- 对于「能用普通模式解决」的任务，Extended Thinking **不会提升质量**，只增加成本
+- 推荐策略：先用普通模式尝试，Claude 无法给出满意答案时再升级到 `think hard`
+
+---
+
+## 22. 记忆系统（Memory）深度指南
+
+Claude Code 的记忆系统让 AI 在不同会话之间保留对你的了解，无需每次重新解释偏好和上下文。
+
+### Memory vs CLAUDE.md 的本质区别
+
+| 维度 | Memory | CLAUDE.md |
+|------|--------|-----------|
+| 性质 | 动态学习，Claude 自动更新 | 静态配置，人工维护 |
+| 范围 | 跨所有项目（全局） | 仅限当前项目 |
+| 内容类型 | 你的个人偏好、习惯、背景信息 | 项目规则、技术栈、禁止操作 |
+| 修改方式 | 对话中说「请记住...」或 `/memory` | 手动编辑文件 |
+| 适合存储 | 代码风格偏好、常用技术栈、沟通风格 | 项目约定、测试命令、禁改文件列表 |
+
+### 存储位置
+
+```bash
+~/.claude/memory/          # 全局记忆目录
+~/.claude/memory/default   # 默认记忆文件（纯文本）
+```
+
+### `/memory` 命令完整操作
+
+```bash
+/memory              # 查看当前所有记忆内容
+/memory edit         # 在编辑器中打开记忆文件进行修改
+/memory delete       # 进入交互式删除模式，选择要删除的条目
+/memory clear        # 清空所有记忆（谨慎使用）
+```
+
+### 主动创建记忆
+
+在对话中直接告诉 Claude，它会将信息持久化到记忆文件：
+
+```
+"请记住：我们项目用 pnpm，不用 npm 或 yarn"
+"请记住：我倾向于使用函数式风格，避免 class 语法"
+"请记住：代码注释用英文，提交信息用中文"
+"把这条加入你的记忆：所有 API 响应都要包含 requestId 字段"
+```
+
+Claude 会回复「已记住」并自动写入 `~/.claude/memory/default`。
+
+### 记忆跨会话工作的原理
+
+每次启动新会话时，Claude Code 自动读取 `~/.claude/memory/` 下的记忆文件，将其作为系统 Prompt 的一部分注入——效果相当于每次都「预先告知」了这些信息。
+
+### 最佳实践：什么放 Memory，什么放 CLAUDE.md
+
+**放入 Memory（个人级）：**
+- 你偏好的代码风格（tabs vs spaces、命名规范）
+- 你常用的技术栈（「我的 React 项目通常用 Zustand 管状态」）
+- 你的沟通偏好（「解释前先给我结论」）
+- 你的工作节奏（「深夜会话请不要主动建议休息」）
+
+**放入 CLAUDE.md（项目级）：**
+- 项目特定的禁止操作（「不得修改 legacy/billing/ 目录」）
+- 测试运行命令（`pnpm test:watch`）
+- 代码审查规则（「所有 DB 查询必须经过 ORM，禁止裸 SQL」）
+- 团队约定（「PR 必须通过 2 人审批」）
+
+---
+
+## 23. 环境变量完整参考
+
+以下环境变量可通过 shell 配置（`~/.zshrc` / `~/.bashrc`）或 `settings.json` 的 `env` 字段设置。
+
+### 核心认证与模型
+
+| 变量名 | 默认值 | 说明 |
+|--------|-------|------|
+| `ANTHROPIC_API_KEY` | — | API 密钥（API 计费模式必须） |
+| `ANTHROPIC_BASE_URL` | `https://api.anthropic.com` | 自定义 API 端点（企业代理/Bedrock） |
+| `ANTHROPIC_MODEL` | `claude-sonnet-4-6` | 覆盖默认模型 |
+| `ANTHROPIC_SMALL_FAST_MODEL` | `claude-haiku-4-5` | 子代理使用的快速模型 |
+
+### 超时与限制
+
+| 变量名 | 默认值 | 说明 |
+|--------|-------|------|
+| `BASH_MAX_TIMEOUT_MS` | `120000`（2 分钟） | Bash 工具单次执行超时时间 |
+| `BASH_MAX_OUTPUT_LENGTH` | `100000` | Bash 输出最大字符数 |
+| `MCP_TOOL_TIMEOUT` | `60000`（1 分钟） | MCP 工具单次调用超时时间 |
+
+### 实验性功能
+
+| 变量名 | 默认值 | 说明 |
+|--------|-------|------|
+| `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` | `0` | 设为 `1` 启用 Agent Teams |
+| `CLAUDE_CODE_DISABLE_TELEMETRY` | `0` | 设为 `1` 禁用使用数据上报 |
+| `CLAUDE_CODE_ENABLE_STREAMING_HOOKS` | `0` | 设为 `1` 启用流式 Hook（实验性） |
+
+### 企业代理
+
+| 变量名 | 说明 |
+|--------|------|
+| `HTTPS_PROXY` | HTTPS 流量代理地址（如 `http://proxy.corp:8080`） |
+| `HTTP_PROXY` | HTTP 流量代理地址 |
+| `NO_PROXY` | 不走代理的域名列表（逗号分隔） |
+
+### 典型配置示例
+
+```bash
+# 本地开发（~/.zshrc）
+export ANTHROPIC_API_KEY="sk-ant-xxxx"
+export CLAUDE_CODE_DISABLE_TELEMETRY=1
+export BASH_MAX_TIMEOUT_MS=300000   # 给长任务 5 分钟
+
+# CI/CD 环境（GitHub Actions secrets + env）
+# secrets: ANTHROPIC_API_KEY
+# env:
+#   ANTHROPIC_MODEL: claude-haiku-4-5   # CI 用便宜模型
+#   BASH_MAX_TIMEOUT_MS: 60000           # CI 超时更严格
+
+# 企业内网（~/.zshrc 或 settings.json）
+export ANTHROPIC_BASE_URL="https://anthropic-proxy.corp.internal"
+export HTTPS_PROXY="http://proxy.corp.internal:8080"
+export NO_PROXY="localhost,127.0.0.1,.corp.internal"
+```
+
+```json
+// settings.json 方式（推荐用于项目级配置）
+{
+  "env": {
+    "ANTHROPIC_MODEL": "claude-opus-4-6",
+    "BASH_MAX_TIMEOUT_MS": "300000",
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  }
+}
 ```
 
 ---

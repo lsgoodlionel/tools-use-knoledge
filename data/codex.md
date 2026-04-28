@@ -1,5 +1,5 @@
 # OpenAI Codex 初学者完整全套教程
-> 覆盖云端、桌面App、CLI命令行、IDE扩展四大使用方式的全面操作指南
+> 覆盖云端、桌面App、CLI命令行、IDE扩展四大使用方式的全面操作指南  
 > 最后更新：2026年4月（基于最新官方文档）
 
 ---
@@ -26,6 +26,10 @@
 18. [常见问题与故障排查](#十八常见问题与故障排查)
 19. [新手必读：核心工作原则](#十九新手必读核心工作原则)
 20. [进阶：多 Agent 并行工作流](#二十进阶多-agent-并行工作流)
+21. [CI/CD 完整集成指南](#二十一cicd-完整集成指南)
+22. [成本控制与 Token 优化](#二十二成本控制与-token-优化)
+23. [大型代码库最佳实践](#二十三大型代码库最佳实践)
+24. [Codex 的局限性与适用边界](#二十四codex-的局限性与适用边界)
 
 ---
 
@@ -1176,23 +1180,84 @@ codex mcp logout notion
    - **Cadence（频率）**：每小时/每天/每周/自定义 cron
    - **Environment**：在独立的 git worktree 还是本地环境中运行
 
-### 12.3 Automation 的最佳实践
+### 12.3 五个完整 Automation 配置模板
 
-> **规则**：Skills 定义方法，Automations 定义时间表。
-> 如果一个工作流还需要大量人工调整，先把它做成 Skill，等稳定了再设置 Automation。
-
+**模板一：每日代码健康检查**
 ```
-示例 Automation 配置：
-
-名称：每日代码健康检查
+名称：daily-code-health
 频率：工作日 09:00
-项目：我的 API 服务
 Prompt：
-  使用 code-review Skill 检查 main 分支昨天的提交，
+  使用 $code-review Skill 检查 main 分支昨天的提交，
   生成健康报告，包括：新增技术债务、测试覆盖率变化、
-  发现的潜在 Bug。把报告保存到 docs/daily-reports/ 目录。
+  发现的潜在 Bug。保存到 docs/daily-reports/YYYY-MM-DD.md。
+环境：独立 Git Worktree（只读模式）
+```
+
+**模板二：每周依赖安全审查**
+```
+名称：weekly-dependency-audit
+频率：每周一 08:00
+Prompt：
+  运行 npm audit（或 pip-audit），将输出结果分类为
+  Critical / High / Medium / Low。对 Critical 和 High
+  的漏洞，搜索是否有可用的补丁版本并列出升级命令。
+  结果保存到 docs/security-audit-YYYY-WW.md。
 环境：独立 Git Worktree
 ```
+
+**模板三：PR 积压预警**
+```
+名称：pr-backlog-alert
+频率：每天 17:00
+Prompt：
+  使用 $github Skill 获取所有超过 3 天未合并的 PR 列表。
+  按照等待天数排序，标注每个 PR 最近的审查状态。
+  如果积压超过 5 个 PR，在 Slack #dev-alerts 发送提醒。
+环境：Cloud（需要 GitHub + Slack MCP）
+```
+
+**模板四：每次提交后文档同步**
+```
+名称：post-commit-docs-sync
+频率：Webhook（每次 push 到 main 触发）
+Prompt：
+  检查本次提交修改的所有 .ts 和 .py 文件，
+  对应更新 docs/ 目录下的相关文档。
+  只更新有实质内容变化的文档，不修改风格。
+  如有新增公共函数，自动添加到 docs/api-reference.md。
+环境：独立 Git Worktree，完成后自动创建 PR
+```
+
+**模板五：定时性能基准测试**
+```
+名称：weekly-benchmark
+频率：每周五 22:00
+Prompt：
+  运行 npm run benchmark（或 pytest --benchmark），
+  对比上周结果，标记性能退化超过 10% 的指标。
+  生成趋势图数据（JSON 格式）保存到 benchmarks/history/。
+  如有显著退化，创建 GitHub Issue 并打上 perf-regression 标签。
+环境：独立 Git Worktree
+```
+
+### 12.4 Automation 失败排查
+
+| 问题 | 检查方向 |
+|------|---------|
+| Automation 未触发 | 检查 Cadence cron 表达式是否正确；检查 App 是否在后台运行 |
+| 任务执行报错 | 查看 Automation 历史记录中的错误日志；确认依赖的 Skill 存在 |
+| 结果文件未生成 | 确认目标目录有写权限；检查 Worktree 是否已被其他任务占用 |
+| MCP 工具调用失败 | 确认 MCP 服务器已连接；检查 OAuth Token 是否过期 |
+
+### 12.5 Automation 最佳实践
+
+> **核心规则**：Skills 定义方法，Automations 定义时间表。  
+> 一个工作流在手动运行 3 次以上且结果稳定，再转化为 Automation。
+
+- **始终在独立 Worktree 运行**：避免污染主分支
+- **Automation 必须配合 Skill**：Prompt 中调用 `$skill-name` 而非写死逻辑
+- **设置结果存储路径**：每次运行的输出都应有时间戳文件名，便于追溯
+- **Cloud 模式优先**：Automation 在后台运行，Cloud 模式不依赖本地机器是否开机
 
 ---
 
@@ -1484,21 +1549,101 @@ Codex 完成任务后，通常会：
 2. 展示 diff 供你审查
 3. 等你决定：接受（Push/PR）或拒绝（Reset）
 
-### 16.2 Worktree 模式的价值
+### 16.2 Worktree 与普通 `git checkout` 的核心区别
 
-Worktree 让你可以**同时在同一个仓库的多个分支工作**，每个 Codex Thread 在独立的 Worktree 中：
+| 维度 | git checkout | git worktree |
+|------|-------------|-------------|
+| 工作目录数量 | 1 个（切换时丢失当前状态） | N 个（同时存在于不同目录） |
+| 并行任务 | ❌ 只能顺序处理 | ✅ 多个 Codex 线程同时工作 |
+| 切换成本 | 需要 stash 或 commit | 直接切换目录，零成本 |
+| 适合场景 | 单任务线性开发 | 多任务并行开发 |
+
+### 16.3 完整 Git Worktree 命令序列
+
+```bash
+# 创建 Worktree（同时创建新分支）
+git worktree add ../my-app-feature-A feature-A
+
+# 创建 Worktree（使用已存在的分支）
+git worktree add ../my-app-bugfix-1 bugfix-1
+
+# 列出所有 Worktree
+git worktree list
+# 输出示例：
+# /Users/you/projects/my-app          abc1234 [main]
+# /Users/you/projects/my-app-feature-A  def5678 [feature-A]
+# /Users/you/projects/my-app-bugfix-1   ghi9012 [bugfix-1]
+
+# 在指定 Worktree 中运行命令（无需 cd）
+git -C ../my-app-feature-A status
+
+# 删除 Worktree（安全步骤）
+git worktree remove ../my-app-feature-A    # 先移除
+git branch -d feature-A                    # 可选：删除分支
+
+# 清理失效的 Worktree 引用
+git worktree prune
+```
+
+### 16.4 并行 3 个任务的完整示例
 
 ```
-主仓库：~/projects/my-app (branch: main)
-├── Worktree 1：~/projects/my-app-wt1 (branch: feature-A) ← Thread 1 在这里
-├── Worktree 2：~/projects/my-app-wt2 (branch: feature-B) ← Thread 2 在这里
-└── Worktree 3：~/projects/my-app-wt3 (branch: bugfix-1)  ← Thread 3 在这里
+目录结构：
+~/projects/
+├── my-app/                    ← 主仓库 (main)
+├── my-app-feat-auth/          ← Worktree 1：开发登录功能
+├── my-app-feat-dashboard/     ← Worktree 2：开发仪表板
+└── my-app-bugfix-payment/     ← Worktree 3：修复支付 Bug
+
+操作步骤：
+# 1. 创建三个 Worktree
+git worktree add ../my-app-feat-auth       feat/auth
+git worktree add ../my-app-feat-dashboard  feat/dashboard
+git worktree add ../my-app-bugfix-payment  fix/payment
+
+# 2. 在桌面 App 中为每个目录各创建一个 Thread
+# Thread 1：打开 ~/projects/my-app-feat-auth，指派登录功能
+# Thread 2：打开 ~/projects/my-app-feat-dashboard，指派仪表板
+# Thread 3：打开 ~/projects/my-app-bugfix-payment，指派 Bug 修复
+
+# 3. 三个 Thread 完全并行，互不干扰
+# 4. 各自完成后，创建 PR 合并回 main
 ```
 
-好处：
-- 多个 Thread 可以并行修改代码，完全不互相干扰
-- 每个任务都在独立分支，便于 Code Review
-- 可以快速切换查看不同任务的进度
+### 16.5 Worktree 与 Cloud 模式协作
+
+```
+本地开发 + 云端并行的混合模式：
+
+本地（你的机器）：
+  → Worktree 1：功能 A 开发（本地环境，可访问本地服务）
+
+Cloud Thread（Codex 云端）：
+  → Thread B：文档更新（无需本地环境）
+  → Thread C：代码审查（只读操作，适合云端）
+
+优势：本地任务和云端任务并行，
+     本地关机不影响云端 Thread 继续工作。
+```
+
+### 16.6 清理 Worktree 的安全步骤
+
+```bash
+# 第 1 步：确认任务完成，相关 PR 已合并或已关闭
+git -C ../my-app-feature-A log --oneline -5
+
+# 第 2 步：移除 Worktree
+git worktree remove ../my-app-feature-A
+
+# 第 3 步：验证已移除
+git worktree list
+
+# 第 4 步（可选）：删除对应分支
+git branch -d feature-A
+
+# 如果 Worktree 目录已手动删除但 git 仍有记录，执行：
+git worktree prune
+```
 
 ---
 
@@ -1816,7 +1961,128 @@ description = "负责编写和运行测试的 Agent"
 description = "负责更新文档和注释的 Agent"
 ```
 
-### 20.3 将 Codex 作为 MCP 服务器使用
+### 20.3 场景一：安全 + 性能 + 测试三角审查
+
+```toml
+# AGENTS.md 中定义角色分工
+# 主 Agent 的 Prompt：
+# "使用三 Agent 模式审查 src/api/，各自从安全、性能、测试角度出发。"
+
+[agent_roles.security]
+description = """
+  安全审查专家。检查：SQL 注入、XSS、CSRF、认证绕过、
+  敏感数据暴露、权限越权。输出到 review/security.md。
+"""
+
+[agent_roles.performance]
+description = """
+  性能审查专家。检查：N+1 查询、未加索引的过滤条件、
+  大对象序列化、缓存命中率。输出到 review/performance.md。
+"""
+
+[agent_roles.testing]
+description = """
+  测试审查专家。检查：覆盖率盲区、无效 Mock、
+  边界条件缺失、集成测试缺位。输出到 review/testing.md。
+"""
+```
+
+主 Agent 在三个子 Agent 完成后，读取三份报告，生成 `review/summary.md`，按优先级排序所有发现。
+
+### 20.4 场景二：大型迁移流水线（分析→设计→实现）
+
+```
+三 Agent 流水线，严格按顺序执行：
+
+Agent 1（分析 Agent）：
+  → 分析现有 REST API 所有端点，生成 api-inventory.json
+  → 字段：路径、方法、请求参数、响应结构、调用频率
+  → 完成标志：api-inventory.json 存在
+
+Agent 2（设计 Agent）：
+  → 读取 api-inventory.json（等待 Agent 1 完成）
+  → 设计对应的 tRPC router schema
+  → 标注每个端点的迁移复杂度（低/中/高）
+  → 完成标志：trpc-schema.ts 存在
+
+Agent 3（实现 Agent）：
+  → 读取 trpc-schema.ts（等待 Agent 2 完成）
+  → 按复杂度从低到高逐步实现
+  → 每实现一个端点，运行对应测试
+  → 完成标志：所有测试通过
+```
+
+```toml
+# 在 AGENTS.md 中声明交接条件
+# Agent 2 的等待规则：
+"只有当 api-inventory.json 文件存在且包含有效 JSON 时才开始工作"
+```
+
+### 20.5 场景三：文档同步（代码 Agent + 文档 Agent 并行）
+
+```python
+# 通过 OpenAI Agents SDK 组织并行 Agent
+from agents import Agent, Runner
+from agents.mcp import MCPServerStdio
+
+async def run_parallel_doc_sync():
+    async with MCPServerStdio(
+        name="Codex", params={"command": "npx", "args": ["-y", "codex", "mcp"]}
+    ) as codex:
+        code_agent = Agent(
+            name="code-agent",
+            instructions="检查 src/ 目录的最新修改，输出变更摘要到 /tmp/code-changes.json",
+            mcp_servers=[codex]
+        )
+        doc_agent = Agent(
+            name="doc-agent",
+            instructions="读取 /tmp/code-changes.json，更新 docs/ 下对应的文档文件",
+            mcp_servers=[codex]
+        )
+        # 串行运行：先分析变更，再同步文档
+        await Runner.run(code_agent, "分析最新代码变更")
+        await Runner.run(doc_agent, "根据变更同步文档")
+```
+
+### 20.6 Agent 间通过共享文件传递结果
+
+这是 Codex 多 Agent 模式推荐的协作模式：
+
+```
+约定规范：
+├── /tmp/agent-work/
+│   ├── step1-analysis.json    ← Agent 1 输出
+│   ├── step2-design.md        ← Agent 2 输出（基于 step1）
+│   └── step3-result.json      ← Agent 3 输出（基于 step2）
+```
+
+在 AGENTS.md 中声明：
+```
+多 Agent 工作流规范：
+- 每个 Agent 的输出必须保存到 /tmp/agent-work/stepN-*.* 文件
+- 读取前一步骤的文件前，必须验证文件存在且不为空
+- 完成后在文件末尾追加 "STATUS: DONE" 标记
+```
+
+### 20.7 多 Agent 任务的监控与中止
+
+```bash
+# 查看所有 Codex 进程（多 Agent 场景会有多个）
+ps aux | grep codex
+
+# 查看 OTel 追踪日志（需提前配置）
+# config.toml 中开启：
+# [otel]
+# enabled = true
+# endpoint = "http://localhost:4317"
+
+# 强制中止所有 Codex 进程（紧急情况）
+pkill -f "codex"
+
+# 安全中止：在 TUI 中按 Ctrl+C，等待当前步骤完成后退出
+```
+
+### 20.8 将 Codex 作为 MCP 服务器使用
 
 可以让其他工具（如 OpenAI Agents SDK）通过 MCP 协议调用 Codex：
 
@@ -1826,30 +2092,414 @@ codex mcp
 # Codex 会监听 stdio，其他工具可以通过 MCP 协议调用它
 ```
 
-在 Python 中通过 Agents SDK 调用：
-
-```python
-from agents import Agent
-from agents.mcp import MCPServerStdio
-
-async with MCPServerStdio(
-    name="Codex CLI",
-    params={"command": "npx", "args": ["-y", "codex", "mcp"]},
-) as codex_mcp:
-    agent = Agent(
-        name="主控 Agent",
-        instructions="...",
-        mcp_servers=[codex_mcp]
-    )
-    # agent 现在可以调用 Codex 的工具来操作文件
-```
-
-### 20.4 多 Agent 工作流最佳实践
+### 20.9 多 Agent 最佳实践总结
 
 - **每个 Agent 职责单一**：避免一个 Agent 既写代码又审查又测试
 - **通过共享文件传递结果**：Agent A 写 REQUIREMENTS.md，Agent B 读取并实现
-- **设置明确的交接条件**：如"只有 design_spec.md 存在才开始实现"
+- **设置明确的交接条件**：如「只有 design_spec.md 存在才开始实现」
+- **串行优于并行**（依赖场景）：有依赖关系的任务必须串行；真正独立的任务才并行
 - **启用可审查的追踪日志**：使用 OTel 记录每个 Agent 的操作，便于调试
+- **每个 Agent 运行在独立 Worktree**：避免并行写入冲突
+
+---
+
+## 二十一、CI/CD 完整集成指南
+
+### 21.1 `codex exec` 在 CI 环境的用法
+
+```bash
+# 基本非交互式执行
+codex exec "检查代码质量并报告问题"
+
+# 带 JSON 输出（便于 CI 解析）
+codex exec --json "审查 src/ 目录的安全问题"
+# 输出格式：{"status": "success", "output": "...", "files_modified": [...]}
+
+# 指定审批模式（CI 中推荐 full-auto 或 auto-edit）
+codex exec --approval-mode full-auto "修复 ESLint 错误"
+
+# 指定模型（CI 通常用便宜模型）
+codex exec --model codex-mini-latest "运行代码格式化"
+
+# 退出码说明（用于 CI 判断）
+# 0 = 成功完成
+# 1 = 任务执行失败（Claude 判断无法完成）
+# 2 = 运行时错误（网络、认证等问题）
+```
+
+### 21.2 GitHub Actions：PR 自动代码审查
+
+```yaml
+# .github/workflows/codex-review.yml
+name: Codex Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Codex
+        run: npm install -g @openai/codex
+
+      - name: Run Codex Review
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          # 获取 PR 变更文件列表
+          CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
+          echo "Changed files: $CHANGED"
+
+          # 运行 Codex 审查
+          REVIEW=$(codex exec --json --approval-mode full-auto \
+            "审查以下文件的代码质量、潜在 Bug 和安全问题：$CHANGED
+             输出格式：按严重程度（Critical/High/Medium/Low）分组的问题列表。
+             只报告实际问题，不要重新格式化代码。")
+
+          echo "$REVIEW" > review-result.json
+
+      - name: Post Review Comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const result = JSON.parse(fs.readFileSync('review-result.json', 'utf8'));
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## 🤖 Codex 代码审查\n\n${result.output}`
+            });
+```
+
+### 21.3 GitHub Actions：Issue 触发自动修复
+
+```yaml
+# .github/workflows/codex-autofix.yml
+name: Codex Auto Fix
+
+on:
+  issues:
+    types: [labeled]
+
+jobs:
+  autofix:
+    # 只在打了 codex-fix 标签时触发
+    if: github.event.label.name == 'codex-fix'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Codex
+        run: npm install -g @openai/codex
+
+      - name: Auto Fix
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          ISSUE_TITLE="${{ github.event.issue.title }}"
+          ISSUE_BODY="${{ github.event.issue.body }}"
+
+          # 创建新分支
+          BRANCH="codex-fix/issue-${{ github.event.issue.number }}"
+          git checkout -b "$BRANCH"
+
+          # 运行 Codex 修复
+          codex exec --approval-mode full-auto \
+            "修复以下 Issue：
+             标题：$ISSUE_TITLE
+             描述：$ISSUE_BODY
+
+             规则：
+             1. 只修改与 Issue 直接相关的代码
+             2. 不要修改测试文件以外的测试逻辑
+             3. 修复后运行测试确认通过"
+
+          # 提交并推送
+          git add -A
+          git commit -m "fix: auto-fix for issue #${{ github.event.issue.number }}"
+          git push origin "$BRANCH"
+
+      - name: Create PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = await github.rest.pulls.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `fix: auto-fix for #${{ github.event.issue.number }}`,
+              head: `codex-fix/issue-${{ github.event.issue.number }}`,
+              base: 'main',
+              body: `Closes #${{ github.event.issue.number }}\n\n由 Codex 自动生成`
+            });
+            console.log(`PR created: ${pr.data.html_url}`);
+```
+
+### 21.4 CI 环境的 AGENTS.md 适配建议
+
+```markdown
+# AGENTS.md（CI 专用版）
+
+## CI 环境规则
+- **禁止提交到 main 分支**，所有变更必须在当前工作分支
+- 运行测试时使用 `npm test -- --ci --no-coverage`（更快）
+- 如果测试失败，报告失败原因，不要继续修改更多文件
+- 所有日志输出到 stdout，不要创建新的日志文件
+- 完成后输出结构化摘要：{ "status": "ok|fail", "changes": [...] }
+
+## 禁止操作
+- 不得修改 .github/ 目录下的文件
+- 不得修改 package-lock.json 或 pnpm-lock.yaml
+- 不得发起任何外部网络请求（沙箱已限制）
+```
+
+---
+
+## 二十二、成本控制与 Token 优化
+
+### 22.1 模型层级选择
+
+| 模型 | 适用场景 | 成本等级 |
+|------|---------|---------|
+| `gpt-5.5` | 复杂架构分析、安全审计、难以复现的 Bug | 最高 |
+| `gpt-5.4` | 日常功能开发、重构、代码审查 | 中等 |
+| `codex-mini-latest` | 简单 Bug 修复、格式化、文档生成、CI 流水线 | 最低（约 1/5） |
+
+### 22.2 用 `codex-mini-latest` 作为子 Agent 降低成本
+
+```toml
+# config.toml
+[model]
+default = "gpt-5.4"          # 主任务用 gpt-5.4
+
+# 在 Prompt 中显式要求：
+# "使用 codex-mini 模型完成以下子任务：搜索所有 TODO 注释并汇总"
+```
+
+混合策略：
+- **主 Agent**（复杂决策）：`gpt-5.4` 或 `gpt-5.5`
+- **搜索子 Agent**（grep / 文件扫描）：`codex-mini-latest`
+- **CI 流水线**（自动任务）：`codex-mini-latest`
+
+### 22.3 常见任务 Token 消耗估算
+
+| 任务类型 | 预估 Token 消耗 | 建议模型 |
+|---------|--------------|---------|
+| 单文件 Bug 修复（<200 行） | 2,000~5,000 | codex-mini |
+| 代码审查（10 个文件） | 8,000~15,000 | gpt-5.4 |
+| 功能实现（含测试） | 15,000~40,000 | gpt-5.4 |
+| 大型重构（50+ 文件） | 50,000~150,000 | gpt-5.5 |
+| 文档生成（整个模块） | 5,000~12,000 | codex-mini |
+| CI 格式化 + Lint 修复 | 1,000~3,000 | codex-mini |
+
+### 22.4 降低成本的 5 个具体技巧
+
+**技巧一：`@文件`精准引用，避免全仓库扫描**
+```
+❌ 低效："分析整个项目的代码质量"
+✅ 高效："分析 @src/api/auth.ts 和 @src/middleware/jwt.ts 的安全问题"
+```
+
+**技巧二：AGENTS.md 限定工作范围**
+```markdown
+# AGENTS.md
+## 工作范围限定
+只分析和修改 src/ 和 tests/ 目录。
+不要扫描 node_modules/、dist/、.git/ 目录。
+```
+
+**技巧三：关闭不需要的 MCP 服务器**
+```bash
+codex mcp list          # 查看已连接的 MCP
+codex mcp remove slack  # 关闭不需要的（每个 MCP 占用固定 token）
+```
+
+**技巧四：设置 max_turns 避免无限循环**
+```toml
+# config.toml
+[limits]
+max_turns = 20   # 最多 20 轮对话，防止超支
+```
+
+**技巧五：批量任务用 `codex exec` 替代交互式**
+```bash
+# 交互式模式有额外的 UI 渲染开销
+# 批量任务直接用 exec，更省 token
+codex exec --model codex-mini-latest "格式化 src/ 目录所有文件"
+```
+
+### 22.5 OpenAI 用量监控
+
+```bash
+# 在 platform.openai.com/usage 设置月度告警
+# 推荐阈值：月预算的 70% 时发邮件告警
+
+# 在 Codex 中查看本次任务消耗（TUI 内）
+/cost   # 显示本 Thread 的 token 使用量和估算费用
+```
+
+---
+
+## 二十三、大型代码库最佳实践
+
+### 23.1 分层 AGENTS.md 策略
+
+大型项目应在多个层级配置 AGENTS.md，越具体的层级优先级越高：
+
+```
+my-project/
+├── AGENTS.md              ← 根级：全局规则（通用约定）
+├── src/
+│   ├── AGENTS.md          ← 模块级：src 特定规则
+│   ├── api/
+│   │   └── AGENTS.md      ← 子模块级：API 层规则
+│   └── core/
+│       └── AGENTS.md      ← 子模块级：核心逻辑规则
+└── tests/
+    └── AGENTS.md          ← 测试目录：测试专属规则
+```
+
+```markdown
+# src/api/AGENTS.md（示例）
+## API 层特定规则
+- 所有新端点必须添加到 src/api/routes/index.ts 的路由注册
+- 请求验证统一使用 Zod schema，文件放在 src/api/schemas/
+- 禁止在 Controller 层直接操作数据库，必须通过 Service 层
+- 每个新端点必须有对应的集成测试
+```
+
+### 23.2 通过 `@文件` 引用给 Codex 精准上下文
+
+```
+❌ 让 Codex 自己探索（效率低，消耗大）：
+"修复用户认证的 Bug"
+
+✅ 提供精准上下文（高效）：
+"修复 @src/api/auth/login.ts 第 87 行的 Bug。
+ 相关类型定义在 @src/types/auth.d.ts。
+ 现有测试在 @tests/api/auth.test.ts。"
+```
+
+对于超大文件，指定行范围：
+```
+"分析 @src/core/engine.ts:120-200 这段代码的性能问题"
+```
+
+### 23.3 避免 Codex 过度修改不相关文件
+
+```markdown
+# AGENTS.md（大型项目防护规则）
+
+## 禁止修改的文件/目录
+- `legacy/billing/` — 老系统计费模块，正在迁移中，不得触碰
+- `src/generated/` — 自动生成文件，不要手动修改
+- `config/production.env` — 生产环境配置，只有 DevOps 可以修改
+- `CHANGELOG.md` — 手动维护，不要自动更新
+
+## 修改范围约束
+- 只修改与任务直接相关的文件
+- 如果需要修改 3 个以上不相关文件，先停下来问我
+- 不要「顺手」重构路过的代码
+```
+
+### 23.4 大型仓库的推荐 Worktree 并行策略
+
+```
+并行策略：按模块拆分任务，各 Worktree 负责独立模块
+
+Worktree 1 → src/api/     （API 层重构）
+Worktree 2 → src/core/    （核心逻辑优化）
+Worktree 3 → tests/       （测试补充，只读 src/）
+
+关键原则：
+- 每个 Worktree 对应一个独立的功能边界
+- 跨模块变更（如修改共享类型）必须在主仓库完成后，各 Worktree 再 rebase
+- 合并顺序：先合并最底层依赖（core）→ 再合并上层（api）→ 最后合并测试
+```
+
+### 23.5 超时处理配置
+
+```toml
+# config.toml（大型代码库专用配置）
+[limits]
+# 长时间运行任务的超时设置
+tool_timeout_ms = 300000      # 单个工具调用 5 分钟超时（默认 60s）
+max_turns = 50                # 大型任务允许更多轮次
+
+[sandbox]
+# 网络请求超时（外部 API 测试场景）
+network_timeout_ms = 30000
+```
+
+---
+
+## 二十四、Codex 的局限性与适用边界
+
+### 24.1 不擅长的任务类型
+
+| 任务类型 | 原因 | 替代方案 |
+|---------|------|---------|
+| 需要实时用户交互的流程 | Codex 是批处理模式，无法在中间等待输入 | 用 Cursor / Claude Code 交互式完成 |
+| 高度依赖本地隐私数据 | Cloud 模式代码上传到 OpenAI 服务器 | 使用本地沙箱模式或 Claude Code |
+| 实时外部 API 测试 | 默认沙箱无网络访问 | 手动测试或配置 `network: sandbox-internet` |
+| GUI / 可视化设计 | 无法渲染和操控图形界面 | Figma、v0、Cursor 等工具 |
+| 音视频处理 | 沙箱资源限制，无 GPU 支持 | 专用 ML 平台或本地脚本 |
+
+### 24.2 沙箱限制说明
+
+| 限制项 | 默认行为 | 如何调整 |
+|--------|---------|---------|
+| 网络访问 | ❌ 完全禁止 | `network: "sandbox-internet"` 开启 |
+| 文件系统 | 仅限工作目录 | 通过 `volumes` 挂载其他路径 |
+| 执行时长 | 最长 30 分钟 | 无法调整（硬限制） |
+| 内存 | 4GB（默认） | Pro/Team 套餐可申请更高配额 |
+| GPU 访问 | ❌ 不支持 | 不可用 |
+| 硬件设备 | ❌ 不支持 | 不可用（无 USB、串口等） |
+
+### 24.3 上下文窗口限制对大文件的影响
+
+- **模型上下文窗口**：GPT-5 系列约 128K tokens（约 10 万汉字）
+- **影响**：超大单文件（>3000 行）可能无法全部放入上下文
+- **应对策略**：
+  - 在 AGENTS.md 中引导 Codex「先分析文件结构，再按需读取特定部分」
+  - 将大文件拆分为多个小文件（也是好的代码设计）
+  - 使用 `@文件:行范围` 限定读取范围
+
+### 24.4 云端模式 vs 本地模式的能力差异
+
+| 能力 | Cloud 模式 | 本地沙箱模式 |
+|------|-----------|------------|
+| 访问本地服务（localhost） | ❌ | ✅ |
+| 访问私有 npm registry | ❌ | ✅（需配置） |
+| 读取本地密钥文件 | ❌ | ⚠️（需明确授权） |
+| 后台运行（关机后继续） | ✅ | ❌ |
+| 并行多任务 | ✅（云端资源） | ⚠️（受本机性能限制） |
+| 代码隐私 | 上传到 OpenAI | 保留在本地 |
+
+### 24.5 何时应该手动处理而非依赖 Codex
+
+**应该手动处理的情况：**
+- 需要权衡多个产品方向的架构决策（AI 不了解业务背景）
+- 涉及生产数据库的危险迁移（数据安全，人工确认更稳妥）
+- 代码审查的最终决策（AI 是辅助，不是最终判断者）
+- 需要与团队成员深度沟通才能理解的 Bug
+- 安全漏洞的修复验证（需要专业人工审查）
+
+**判断标准：** 如果任务需要「解释业务决策背后的原因」或「承担法律/安全责任」，就应该人工介入。
 
 ---
 
