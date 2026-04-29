@@ -33,6 +33,8 @@ ai-tools-guide/
 ├── index.html              # 主页面（HTML + 内嵌 CSS）
 ├── app.js                  # 应用逻辑（Vanilla JS，约 380 行）
 ├── manifest.json           # 工具注册表（驱动所有工具标签）
+├── server.js               # 生产用静态文件服务器（零依赖）
+├── install.sh              # Ubuntu 一键安装部署脚本
 └── data/
     ├── claude-code.md      # Claude Code 完整教程（1734 行，24 章）
     ├── codex.md            # OpenAI Codex 完整教程（2575 行，24 章）
@@ -116,23 +118,86 @@ ai-tools-guide/
 
 ---
 
-## 本地运行
+## Ubuntu 一键安装部署
 
-**方式一：Python（推荐，无需安装依赖）**
+**适合场景：** 云服务器（VPS）、内网服务器、长期运行的生产环境。  
+**支持系统：** Ubuntu 20.04 / 22.04 / 24.04（及同源 Debian 系列）
+
+### 一行命令安装
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/lsgoodlionel/tools-use-knoledge/main/install.sh | sudo bash
+```
+
+脚本会自动完成以下所有步骤：
+
+| 步骤 | 说明 |
+|------|------|
+| 安装 Node.js LTS | 通过 NodeSource 安装 v20，已有新版本则跳过 |
+| 克隆仓库 | 部署到 `/opt/ai-tools-guide/` |
+| 创建 systemd 服务 | 开机自启，崩溃自动重启，以 `www-data` 运行 |
+| 配置防火墙 | 自动放行 TCP 8899（检测到 ufw 时） |
+| 启动服务 | 部署完成立即上线 |
+
+安装完成后输出访问地址（本地 / 局域网 / 公网）。
+
+### 自定义配置
+
+```bash
+# 修改安装目录和端口
+INSTALL_DIR=/srv/ai-guide PORT=80 bash install.sh
+
+# 使用不同系统服务用户
+RUN_USER=ubuntu bash install.sh
+```
+
+### 服务管理命令
+
+```bash
+# 查看运行状态
+systemctl status ai-tools-guide
+
+# 实时查看日志
+journalctl -u ai-tools-guide -f
+
+# 重启 / 停止 / 启动
+systemctl restart ai-tools-guide
+systemctl stop    ai-tools-guide
+systemctl start   ai-tools-guide
+
+# 更新到最新内容（无需重装）
+cd /opt/ai-tools-guide && git pull
+systemctl restart ai-tools-guide
+```
+
+### 一键更新
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/lsgoodlionel/tools-use-knoledge/main/install.sh | sudo bash
+```
+
+重新运行安装脚本即可完成更新（`git pull` 后重启服务，不会重装 Node.js）。
+
+---
+
+## 本地运行（开发环境）
+
+**方式一：Node.js（推荐）**
+
+```bash
+git clone https://github.com/lsgoodlionel/tools-use-knoledge.git
+cd tools-use-knoledge
+node server.js
+# 打开 http://localhost:8899
+```
+
+**方式二：Python（无需安装依赖）**
 
 ```bash
 git clone https://github.com/lsgoodlionel/tools-use-knoledge.git
 cd tools-use-knoledge
 python3 -m http.server 8080
 # 打开 http://localhost:8080
-```
-
-**方式二：Node.js**
-
-```bash
-npx serve .
-# 或
-npx http-server . -p 8080
 ```
 
 **方式三：VS Code Live Server 扩展**
@@ -231,6 +296,11 @@ switchTool(id) → fetch data/xxx.md
 ---
 
 ## 更新日志
+
+### v1.3.0（2026-04-28）
+
+- 新增 `install.sh`：Ubuntu 一键安装脚本，自动安装 Node.js、克隆仓库、创建 systemd 服务、配置防火墙
+- 新增 `server.js`：生产用零依赖静态文件服务器，支持 PORT 环境变量、优雅退出、安全路径检查
 
 ### v1.2.0（2026-04-28）
 
